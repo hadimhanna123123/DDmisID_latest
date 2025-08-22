@@ -8,7 +8,7 @@ from tabulate import tabulate
 from pathlib import Path
 import json
 from ddmisid import read_config
-
+import sys
 # Global variable to store the validated config
 config = None
 config_path_json = Path(
@@ -53,8 +53,10 @@ def _load_validated_config():
 def _run_snakemake(snakemake_args):
     """Wrapper for running the Snakemake pipeline with dynamic flags."""
     try:
-        cmd = ["snakemake"] + list(snakemake_args)
-        logger.info(f"Running Snakemake with command: {' '.join(cmd)}")
+        # Ensure --printshellcmds and --verbose are included unless explicitly overridden
+        default_args = ["--printshellcmds", "--verbose"]
+        cmd = ["snakemake"] + default_args + list(snakemake_args) # added
+        logger.info(f"Running Snakemake with command: {' '.join(cmd)}") 
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
         raise
