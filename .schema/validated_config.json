@@ -1,0 +1,88 @@
+{
+    "user_id": "hmhanna",
+    "max_calib_files": 3,
+    "verbose": true,
+    "pid": {
+        "sweight_binning": {
+            "Brunel_P": [
+                10000.0,
+                12500.0,
+                15000.0,
+                17500.0,
+                20000.0,
+                25000.0,
+                50000.0,
+                100000.0
+            ],
+            "Brunel_ETA": [
+                1.5,
+                2.5,
+                5.5
+            ],
+            "nTracks_Brunel": [
+                0.0,
+                250.0,
+                1000.0
+            ]
+        },
+        "pid_extrap_binning": {
+            "Brunel_P": [
+                10000.0,
+                12500.0,
+                15000.0,
+                17500.0,
+                20000.0,
+                22500.0,
+                25000.0,
+                50000.0,
+                100000.0
+            ],
+            "Brunel_ETA": [
+                1.5,
+                2.5,
+                3.5,
+                5.5
+            ],
+            "nTracks_Brunel": [
+                0.0,
+                250.0,
+                1000.0
+            ]
+        },
+        "species": {
+            "kaon": "K",
+            "pion": "Pi",
+            "proton": "P",
+            "electron": "e_B_Jpsi"
+        },
+        "year": "2018",
+        "magpol": "up",
+        "control": "ProbNNghost<0.1 & DLLmu<-3.0 & IsMuon==0.0 & probe_hasMuon==1.0 & InMuonAcc==1.0",
+        "target": "ProbNNghost<0.1 & DLLmu>-2.0 & DLLmu<0.0 & IsMuon==0.0 & probe_hasMuon==1.0 & InMuonAcc==1.0",
+        "common_selection": "probe_Brunel_NShared==0 & Brunel_P>10000 & Brunel_P<100000 & Brunel_PT>1500",
+        "reco_partitions": {
+            "kaon_like": "DLLK>0.0 & (DLLK-DLLp)>0.0 & (DLLK-DLLe)>0.0",
+            "pion_like": "DLLK<0.0 & DLLp<0.0 & DLLe<0.0",
+            "proton_like": "DLLp>0.0 & (DLLp-DLLK)>0.0 & (DLLp-DLLe)>0.0",
+            "electron_like": "DLLe>0.0 & (DLLe-DLLK)>0.0 & (DLLe-DLLp)>0.0"    
+        },
+        "ghost_config": null
+    },
+    "data": {
+        "input_path": "/afs/cern.ch/user/h/hmhanna/private/DDmisID/DDmisID/Data/inputData/Bc2D0MuNuX.root",
+        "data_key": "B2DMuNuX_D02KPi_FakeMuonTuple",
+        "data_tree": "DecayTree",
+        "data_prefixes": {
+            "P": "Mu_plus",
+            "ETA": "Mu_plus_LK",
+            "nTracks": ""
+        },
+        "data_reco_partitions": {
+            "kaon": "(Mu_plus_InMuonAcc==1.0) & (Mu_plus_NShared==0) & (Mu_plus_P>10000) & (Mu_plus_PIDmu<-3.0) & (Mu_plus_isMuon==0) & (Mu_plus_hasMuon==1.0) & (Mu_plus_ProbNNghost<0.1) & (Mu_plus_PIDK>0.0) & ( (Mu_plus_PIDK-Mu_plus_PIDp)>0.0 ) & ( (Mu_plus_PIDK-Mu_plus_PIDe)>0.0 )",
+            "pion": "(Mu_plus_InMuonAcc==1.0) & (Mu_plus_NShared==0) & (Mu_plus_P>10000) & (Mu_plus_P<100000) & (Mu_plus_PT>1500) & (Mu_plus_PIDmu<-3.0) & (Mu_plus_isMuon==0) & (Mu_plus_hasMuon==1.0) & (Mu_plus_ProbNNghost<0.1) & (Mu_plus_PIDK<0.0) & (Mu_plus_PIDp<0.0) & (Mu_plus_PIDe<0.0)",
+            "proton": "(Mu_plus_InMuonAcc==1.0) & (Mu_plus_NShared==0) & (Mu_plus_P>10000) & (Mu_plus_P<100000) & (Mu_plus_PT>1500) & (Mu_plus_PIDmu<-3.0) & (Mu_plus_isMuon==0) & (Mu_plus_hasMuon==1.0) & (Mu_plus_ProbNNghost<0.1) & (Mu_plus_PIDp>0.0) & ( (Mu_plus_PIDp-Mu_plus_PIDK)>0.0 ) & ( (Mu_plus_PIDp-Mu_plus_PIDe)>0.0 )",
+            "electron": "(Mu_plus_InMuonAcc==1.0) & (Mu_plus_NShared==0) & (Mu_plus_P>10000) & (Mu_plus_P<100000) & (Mu_plus_PT>1500) & (Mu_plus_PIDmu<-3.0) & (Mu_plus_isMuon==0) & (Mu_plus_hasMuon==1.0) & (Mu_plus_ProbNNghost<0.1) & (Mu_plus_PIDe>0.0) & ( (Mu_plus_PIDe-Mu_plus_PIDK)>0.0 ) & ( (Mu_plus_PIDe-Mu_plus_PIDp)>0.0 )"
+        },
+        "output_path": "/afs/cern.ch/user/h/hmhanna/private/DDmisID/DDmisID/Data/outputData/fakemuon_2018_MU.root"
+    }
+}

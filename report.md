@@ -255,10 +255,10 @@ Below is a detailed explanation of the critical configuration sections:
    ```yaml
    data: 
      # File location settings
-     input_path: "/ceph/submit/data/user/b/blaised/bc2dmunu/fakemuon/DATA/merged_sj_data/D0MuNu/2018/MU/Bc2D0MuNuX.root"
+     input_path: "/afs/cern.ch/user/h/hmhanna/private/DDmisID/DDmisID/Data/inputData/Bc2D0MuNuX.root"
      data_key: "B2DMuNuX_D02KPi_FakeMuonTuple"
      data_tree: "DecayTree"
-     output_path: "/work/submit/blaised/DDmisID/misid_w/fakemuon_2018_MU.root"
+     output_path: "/afs/cern.ch/user/h/hmhanna/private/DDmisID/DDmisID/Data/outputData/fakemuon_2018_MU.root"
      
      # Variable name mapping in your input data
      data_prefixes: 

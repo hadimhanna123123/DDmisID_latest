@@ -8,13 +8,75 @@ from ddmisid.pid.species_strategy import ParticleStrategy, GhostStrategy
 from ddmisid.pid.base_job_generator import BaseJobGenerator
 from loguru import logger
 import os
-from config.calib_tuning import CalibSamples, MCTunings
+from ..config.calib_tuning import CalibSamples, MCTunings
 from ddmisid.utils.binning import DefaultBinningGenerator
 import re
 
 
 class JobWriterMixin:
     """Mixin to handle the writing and permissions of bash scripts."""
+
+    # def _construct_job_command(
+    #     self,
+    #     calib_sample: str,
+    #     magpol: str,
+    #     species_pidcalib_alias: str,
+    #     pid_cut: str,
+    #     binning_vars: list,
+    #     binning_path: Path,
+    #     common_selection: str,
+    #     max_calib_files: int,
+    #     output_dir: Path,
+    # ) -> str:
+    #     """Construct the bash command for PID-efficiency extraction job execution."""
+    #     # Local file path - adjust this to where you've downloaded the ROOT files
+    #     local_data_dir = "/path/to/local/pidcalib_data"  # Update this path
+    #     sample_file_map = {
+    #         'Electron18': f"{local_data_dir}/Turbo2018_B2KJpsiEE_MagUp.root",
+    #         # Add other samples as needed
+    #     }
+        
+    #     # Build the basic job command with timeout and local files
+    #     if calib_sample in sample_file_map:
+    #         # Use local file if available
+    #         local_file = sample_file_map[calib_sample]
+    #         job_conf = (
+    #             f"source /cvmfs/lhcb.cern.ch/lib/LbEnv &&\n"
+    #             f"timeout 1h lb-conda pidcalib pidcalib2.make_eff_hists "
+    #             f"--input-files {local_file} --magnet {magpol} --particle {species_pidcalib_alias} "
+    #             f"--pid-cut '{pid_cut}' --cut '{common_selection}' --binning-file {binning_path} "
+    #             f"--output-dir {output_dir}"
+    #         )
+    #     else:
+    #         # Fall back to downloading from EOS
+    #         job_conf = (
+    #             f"source /cvmfs/lhcb.cern.ch/lib/LbEnv &&\n"
+    #             f"timeout 1h lb-conda pidcalib pidcalib2.make_eff_hists --sample {calib_sample} "
+    #             f"--magnet {magpol} --particle {species_pidcalib_alias} --pid-cut '{pid_cut}' "
+    #             f"--cut '{common_selection}' --binning-file {binning_path} --output-dir {output_dir} "
+    #             f"--max-files {max_calib_files if max_calib_files > 0 else ''}"
+    #         )
+
+    #     # Add binning variables
+    #     for binning_var in binning_vars:
+    #         job_conf += f" --bin-var {binning_var}"
+
+    #     # Apply max file limit if specified [default is -1 for all files]
+    #     if max_calib_files > 0:
+    #         job_conf += f" --max-files {max_calib_files}"
+
+    #     # Add verbose flag if specified
+    #     if self.verbose:
+    #         job_conf += " --verbose"
+
+    #     # Final step: touch a done file after completion
+    #     job_conf += (
+    #         f" &&\ntouch {output_dir}/pidcalib2.make_eff_hists.done\n"
+    #         f"for f in {output_dir}/*.pkl; do\n"
+    #         f'mv "$f" {output_dir}/perf.pkl\ndone\n'
+    #     )
+
+    #     return job_conf
 
     def _construct_job_command(
         self,
@@ -29,35 +91,72 @@ class JobWriterMixin:
         output_dir: Path,
     ) -> str:
         """Construct the bash command for PID-efficiency extraction job execution."""
-        # Build the basic job command
-        job_conf = (
-            f"source /cvmfs/lhcb.cern.ch/lib/LbEnv &&\n"
-            f"lb-conda pidcalib pidcalib2.make_eff_hists --sample {calib_sample} "
-            f"--magnet {magpol} --particle {species_pidcalib_alias} --pid-cut '{pid_cut}' "
-            f"--cut '{common_selection}' --binning-file {binning_path} --output-dir {output_dir}"
-        )
+        # Create output directory if it doesn't exist
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # [TODO] make sure if the bin-vars should be hardcoded as such or also from the json file
+        # Build the job command with retry logic
+        job_script = f"""#!/bin/bash
 
-        # Add binning variables
-        for binning_var in binning_vars:
-            job_conf += f" --bin-var {binning_var}"
+    # Set XRootD timeouts (in seconds)
+    export XRD_TIMEOUT=1800
+    export XRD_REQUESTTIMEOUT=1800
+    export XRD_CONNECTTIMEOUT=300
+    export XRD_STREAMTIMEOUT=1800
 
-        # Apply max file limit if specified [default is -1 for all files]
-        if max_calib_files > 0:
-            job_conf += f" --max-files {max_calib_files}"
+    # Function to run PIDCalib2 with retries
+    run_with_retry() {{
+        local max_retries=3
+        local retry_count=0
+        local success=0
+        
+        while [ $retry_count -lt $max_retries ]; do
+            echo "Attempt $((retry_count + 1)) of $max_retries at $(date)"
+            
+            # Run PIDCalib2 with a single file first to test the connection
+            lb-conda pidcalib pidcalib2.make_eff_hists \\
+                --sample {calib_sample} \\
+                --magnet {magpol} \\
+                --particle {species_pidcalib_alias} \\
+                --pid-cut '{pid_cut}' \\
+                --cut '{common_selection}' \\
+                --bin-var Brunel_P --bin-var Brunel_ETA --bin-var nTracks_Brunel \\
+                --binning-file {binning_path} \\
+                --output-dir {output_dir} \\
+                --max-files {max_calib_files if max_calib_files > 0 else 1} \\
+                --verbose
+            
+            if [ $? -eq 0 ]; then
+                success=1
+                break
+            fi
+            
+            echo "Attempt $((retry_count + 1)) failed. Retrying in 30 seconds..."
+            sleep 30
+            ((retry_count++))
+        done
+        
+        return $((1 - success))
+    }}
 
-        # Add verbose flag if specified
-        if self.verbose:
-            job_conf += " --verbose"
+    # Main execution
+    echo "Starting PIDCalib2 job at $(date)"
+    echo "Sample: {calib_sample}, Magnet: {magpol}, Particle: {species_pidcalib_alias}"
 
-        # Final step: touch a done file after completion
-        job_conf += (
-            f" &&\ntouch {output_dir}/pidcalib2.make_eff_hists.done\n"
-            f"for f in {output_dir}/*.pkl; do\n"
-            f'mv "$f" {output_dir}/perf.pkl\ndone\n'
-        )
-
-        return job_conf
-
+    # Run with retry logic
+    if run_with_retry; then
+        echo "PIDCalib2 completed successfully at $(date)"
+        touch {output_dir}/pidcalib2.make_eff_hists.done
+        for f in {output_dir}/*.pkl; do
+            [ -e "$f" ] && mv "$f" {output_dir}/perf.pkl
+        done
+        exit 0
+    else
+        echo "PIDCalib2 failed after multiple attempts at $(date)"
+        exit 1
+    fi
+    """
+        return job_script
+    
     def _write_job_script(self, script_path: Path, job_conf: str) -> None:
         """Write the bash script to the given path and make it executable."""
         with open(script_path, "w") as f:

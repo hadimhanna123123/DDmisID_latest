@@ -26,8 +26,10 @@ import numpy as np
 
 # cleanup after completion
 onsuccess: 
-    shutil.rmtree("workflow/.snakemake/metadata")
-    shutil.rmtree("workflow/.snakemake/log")
+    metadata_dir = "workflow/.snakemake/metadata"
+    if os.path.exists(metadata_dir):
+        shutil.rmtree(metadata_dir)
+        shutil.rmtree("workflow/.snakemake/log")
     shutil.rmtree("scratch") # cleanup pidcalib effs, obs, templates
     shutil.rmtree(".schema") # reset engine
     
