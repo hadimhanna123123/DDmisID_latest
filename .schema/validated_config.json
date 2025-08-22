@@ -64,7 +64,7 @@
             "kaon_like": "DLLK>0.0 & (DLLK-DLLp)>0.0 & (DLLK-DLLe)>0.0",
             "pion_like": "DLLK<0.0 & DLLp<0.0 & DLLe<0.0",
             "proton_like": "DLLp>0.0 & (DLLp-DLLK)>0.0 & (DLLp-DLLe)>0.0",
-            "electron_like": "DLLe>0.0 & (DLLe-DLLK)>0.0 & (DLLe-DLLp)>0.0"
+            "electron_like": "DLLe>0.0 & (DLLe-DLLK)>0.0 & (DLLe-DLLp)>0.0"    
         },
         "ghost_config": null
     },
