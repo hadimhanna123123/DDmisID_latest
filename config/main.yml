@@ -7,7 +7,7 @@ user_id: "hmhanna" # CERN user ID for kinit @CERN.CH
 # test-run flag
 # =============
 # if true, run pidcalib in `--test` mode
-max_calib_files: 25 # how many calibration samples to run over in pidcalib [applies only if test is True]
+max_calib_files: 3 # how many calibration samples to run over in pidcalib [applies only if test is True]
 # if true, produce all run info, including the path to calibration samples, TDirectiory and TTree
 verbose: True 
 
@@ -75,11 +75,11 @@ pid:
 # =============================================================================================================================
 data: 
   # file/directory/tree coordinates
-  # ------------------------------ 
-  input_path: "/afs/cern.ch/user/h/hmhanna/private/DDmisID/DDmisID/Data/inputData/Bc2D0MuNuX.root" # path to hadron-enriched data file (pid + intermediate selection applied)
+  # ------------------------------ /afs/cern.ch/user/h/hmhanna/private/test/DDmisID_latest/Data/input_data/Bc2D0MuNuX.root
+  input_path: "/afs/cern.ch/user/h/hmhanna/private/test/DDmisID_latest/Data/input_data/Bc2D0MuNuX.root" # path to hadron-enriched data file (pid + intermediate selection applied)
   data_key: "B2DMuNuX_D02KPi_FakeMuonTuple"
   data_tree: "DecayTree"
-  output_path: "/afs/cern.ch/user/h/hmhanna/private/DDmisID/DDmisID/Data/outputData/fakemuon_2018_MU.root" # path to hadron-enriched data file (pid + intermediate selection applied)
+  output_path: "/afs/cern.ch/user/h/hmhanna/private/test/DDmisID_latest/Data/outputData/fakemuon_2018_MU.root" # path to hadron-enriched data file (pid + intermediate selection applied)
 
   # prefix for the bespoke single-track branches in the input ROOT file
   # -------------------------------------------------------------------

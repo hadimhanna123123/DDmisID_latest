@@ -81,6 +81,7 @@ def run(snakemake_args):
         return
     kinit(config.user_id)
     logger.info(f"Running the Snakemake pipeline with arguments: {snakemake_args}")
+
     # run the backend snakemake pipeline
     try:
         _run_snakemake(snakemake_args)

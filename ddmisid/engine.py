@@ -53,9 +53,7 @@ def _load_validated_config():
 def _run_snakemake(snakemake_args):
     """Wrapper for running the Snakemake pipeline with dynamic flags."""
     try:
-        # Ensure --printshellcmds and --verbose are included unless explicitly overridden
-        default_args = ["--printshellcmds", "--verbose"]
-        cmd = ["snakemake"] + default_args + list(snakemake_args) # added
+        cmd = ["snakemake"] + list(snakemake_args)
         logger.info(f"Running Snakemake with command: {' '.join(cmd)}") 
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
