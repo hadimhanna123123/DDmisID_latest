@@ -11,6 +11,7 @@ from ddmisid.pid.species_strategy import (
 )
 from ddmisid.engine import config
 from loguru import logger
+import os
 
 class PIDEffXJobFactory:
     """
@@ -23,6 +24,15 @@ class PIDEffXJobFactory:
         self.magpol = config.pid.magpol
         self.species = config.pid.species
         self._validate_species()
+        self._ensure_auth_available()
+
+    def _ensure_auth_available(self):
+        """Ensure authentication tokens are available before job generation."""
+        if not os.environ.get('CERN_OIDC_TOKEN'):
+            logger.warning("CERN_OIDC_TOKEN not found in environment. Jobs may require authentication.")
+        else:
+            token_preview = os.environ['CERN_OIDC_TOKEN'][:20] + "..." if len(os.environ['CERN_OIDC_TOKEN']) > 20 else os.environ['CERN_OIDC_TOKEN']
+            logger.info(f"CERN_OIDC_TOKEN available for job scripts (preview: {token_preview})")
 
     def generate_jobs(
         self, output_dir: str, region_ids: list = ["control", "target"], verbose: bool = False

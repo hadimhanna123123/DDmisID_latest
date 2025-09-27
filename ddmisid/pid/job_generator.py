@@ -94,8 +94,45 @@ class JobWriterMixin:
         # Create output directory if it doesn't exist
         output_dir.mkdir(parents=True, exist_ok=True)
         # [TODO] make sure if the bin-vars should be hardcoded as such or also from the json file
+        
+        # Get the current OIDC token from environment if available
+        oidc_token = os.environ.get('CERN_OIDC_TOKEN', '')
+        
+        # Import the auth module to get the token env file path
+        from ddmisid.auth import get_token_env_file
+        token_env_file = get_token_env_file()
+        
         # Build the job command with retry logic
         job_script = f"""#!/bin/bash
+
+    # Source token environment file if it exists
+    if [ -f "{token_env_file}" ]; then
+        echo "Sourcing token environment from {token_env_file}"
+        source "{token_env_file}"
+    else
+        echo "Token environment file not found at {token_env_file}"
+    fi
+
+    # Export authentication tokens to ensure subprocess access
+    export CERN_OIDC_TOKEN="{oidc_token}"
+    export TOKEN="{oidc_token}"
+    export AUTH_TOKEN="{oidc_token}"
+    export BEARER_TOKEN="{oidc_token}"
+    export ACCESS_TOKEN="{oidc_token}"
+
+    # Function to check if we have a valid token
+    check_auth() {{
+        if [ -z "$CERN_OIDC_TOKEN" ]; then
+            echo "WARNING: No CERN_OIDC_TOKEN found. Authentication may be required."
+            return 1
+        fi
+        echo "CERN_OIDC_TOKEN found (length: ${{#CERN_OIDC_TOKEN}})"
+        return 0
+    }}
+
+    # Check authentication status
+    echo "Checking authentication status..."
+    check_auth
 
     # Set XRootD timeouts (in seconds)
     export XRD_TIMEOUT=1800
@@ -111,8 +148,13 @@ class JobWriterMixin:
         
         while [ $retry_count -lt $max_retries ]; do
             echo "Attempt $((retry_count + 1)) of $max_retries at $(date)"
+            echo "Environment check - CERN_OIDC_TOKEN present: ${{CERN_OIDC_TOKEN:+YES}}${{CERN_OIDC_TOKEN:-NO}}"
             
-            # Run PIDCalib2 with a single file first to test the connection
+            # Run PIDCalib2 with authentication environment properly set
+            env CERN_OIDC_TOKEN="$CERN_OIDC_TOKEN" \\
+                TOKEN="$TOKEN" \\
+                AUTH_TOKEN="$AUTH_TOKEN" \\
+                BEARER_TOKEN="$BEARER_TOKEN" \\
             lb-conda pidcalib pidcalib2.make_eff_hists \\
                 --sample {calib_sample} \\
                 --magnet {magpol} \\
@@ -125,14 +167,18 @@ class JobWriterMixin:
                 --max-files {max_calib_files if max_calib_files > 0 else 1} \\
                 --verbose
             
-            if [ $? -eq 0 ]; then
+            local exit_code=$?
+            echo "PIDCalib2 exit code: $exit_code"
+            
+            if [ $exit_code -eq 0 ]; then
                 success=1
                 break
+            else
+                echo "Attempt $((retry_count + 1)) failed with exit code $exit_code"
+                echo "Retrying in 30 seconds..."
+                sleep 30
+                ((retry_count++))
             fi
-            
-            echo "Attempt $((retry_count + 1)) failed. Retrying in 30 seconds..."
-            sleep 30
-            ((retry_count++))
         done
         
         return $((1 - success))

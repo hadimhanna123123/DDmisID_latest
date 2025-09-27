@@ -123,7 +123,15 @@ def run(snakemake_args):
 
     kinit(config.user_id)
     
-    # Step 3: Run Snakemake pipeline
+    # Step 3: Ensure OIDC token is in environment for subprocess inheritance
+    # Re-export after kinit in case it cleared environment variables
+    if ACCESS_TOKEN.exists():
+        oidc_export_env("CERN_OIDC_TOKEN")
+        logger.info("OIDC token re-exported after kinit for subprocess inheritance")
+    else:
+        logger.warning("No OIDC access token found. You may need to authenticate again.")
+    
+    # Step 4: Run Snakemake pipeline
     logger.info(f"Running the Snakemake pipeline with arguments: {snakemake_args}")
     
     try:
