@@ -31,18 +31,18 @@ def ensure_cern_oidc_auth():
     CLIENT_ID = "ddmisid"  # Registered client ID at https://application-portal.web.cern.ch/
 
    
-    # Check if we already have a valid token
-    if ACCESS_TOKEN.exists():
-        logger.info("OIDC token found, exporting to environment")
-        oidc_export_env("CERN_OIDC_TOKEN")
+    # # Check if we already have a valid token
+    # if ACCESS_TOKEN.exists():
+    #     logger.info("OIDC token found, exporting to environment")
+    #     oidc_export_env("CERN_OIDC_TOKEN")
         
-        # Debug: Print environment variable status
-        logger.info(f"CERN_OIDC_TOKEN set: {'CERN_OIDC_TOKEN' in os.environ}")
-        if "CERN_OIDC_TOKEN" in os.environ:
-            token_preview = os.environ["CERN_OIDC_TOKEN"][:20] + "..." if len(os.environ["CERN_OIDC_TOKEN"]) > 20 else os.environ["CERN_OIDC_TOKEN"]
-            logger.info(f"Token preview: {token_preview}")
+    #     # Debug: Print environment variable status
+    #     logger.info(f"CERN_OIDC_TOKEN set: {'CERN_OIDC_TOKEN' in os.environ}")
+    #     if "CERN_OIDC_TOKEN" in os.environ:
+    #         token_preview = os.environ["CERN_OIDC_TOKEN"][:20] + "..." if len(os.environ["CERN_OIDC_TOKEN"]) > 20 else os.environ["CERN_OIDC_TOKEN"]
+    #         logger.info(f"Token preview: {token_preview}")
         
-        return
+    #     return
     
     # No token found, start device flow
     logger.info("OIDC authentication required - starting device flow")
