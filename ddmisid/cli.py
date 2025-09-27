@@ -127,15 +127,6 @@ def run(snakemake_args):
     # Re-export after kinit in case it cleared environment variables
     if ACCESS_TOKEN.exists():
         oidc_export_env("CERN_OIDC_TOKEN")
-        
-        # Create PIDCalib2-specific authentication script
-        try:
-            from ddmisid.auth import create_pidcalib_auth_script
-            auth_script = create_pidcalib_auth_script()
-            logger.info(f"PIDCalib2 authentication script created: {auth_script}")
-        except Exception as e:
-            logger.warning(f"Could not create PIDCalib2 auth script: {e}")
-        
         logger.info("OIDC token re-exported after kinit for subprocess inheritance")
     else:
         logger.warning("No OIDC access token found. You may need to authenticate again.")
@@ -147,8 +138,64 @@ def run(snakemake_args):
         _run_snakemake(snakemake_args)
     except Exception as e:
         logger.error(f"Snakemake execution failed: {e}")
+        
+        # Check if this might be authentication-related
+        error_str = str(e).lower()
+        if any(auth_keyword in error_str for auth_keyword in ['auth', 'token', 'login', 'cern']):
+            logger.info("This error might be authentication-related.")
+            print("\n🔐 Authentication might be required. Run 'ddmisid-engine auth' to authenticate.")
+
+
+@cli.command()
+def auth():
+    """Perform CERN OIDC authentication for DDmisID."""    
+    print("🔐 CERN OIDC Authentication for DDmisID")
+    print("-" * 40)
+    
+    try:
+        ensure_cern_oidc_auth()
+        print("✅ Authentication completed successfully!")
+        print("You can now run 'ddmisid-engine run' to execute your pipeline.")
+    except Exception as e:
+        logger.error(f"Authentication failed: {e}")
+        print("❌ Authentication failed. Please check the error messages above.")
+
+
+@cli.command()
+def status():
+    """Check authentication and configuration status."""
+    print("📊 DDmisID Status Check")
+    print("-" * 30)
+    
+    # Check configuration
+    try:
+        _load_validated_config()
+        config = get_config()
+        print("✅ Configuration: Valid")
+        print(f"   User ID: {config.user_id}")
+        print(f"   Year: {config.pid.year}")
+        print(f"   Magnet: {config.pid.magpol}")
+    except FileNotFoundError:
+        print("❌ Configuration: Missing (run 'ddmisid-engine build' first)")
+    except Exception as e:
+        print(f"❌ Configuration: Error - {e}")
+    
+    # Check authentication
+    if ACCESS_TOKEN.exists():
+        token = ACCESS_TOKEN.read_text().strip()
+        print("✅ OIDC Token: Available")
+        print(f"   Token length: {len(token)} characters")
+        print(f"   Token file: {ACCESS_TOKEN}")
+        
+        # Check if token is in environment
+        if os.environ.get('CERN_OIDC_TOKEN'):
+            print("✅ Environment: Token exported")
+        else:
+            print("⚠️  Environment: Token not exported (run 'ddmisid-engine auth')")
     else:
-        logger.info("Success: DDmisID engine run complete.")
+        print("❌ OIDC Token: Not found (run 'ddmisid-engine auth' first)")
+    
+    print("-" * 30)
 
 
 if __name__ == "__main__":
