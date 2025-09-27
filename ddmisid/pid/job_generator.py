@@ -99,27 +99,45 @@ class JobWriterMixin:
         oidc_token = os.environ.get('CERN_OIDC_TOKEN', '')
         
         # Import the auth module to get the token env file path
-        from ddmisid.auth import get_token_env_file
+        from ddmisid.auth import get_token_env_file, create_pidcalib_auth_script
         token_env_file = get_token_env_file()
+        
+        try:
+            pidcalib_auth_script = create_pidcalib_auth_script()
+        except RuntimeError as e:
+            logger.warning(f"Could not create PIDCalib2 auth script: {e}")
+            pidcalib_auth_script = None
         
         # Build the job command with retry logic
         job_script = f"""#!/bin/bash
 
-    # Source token environment file if it exists
-    if [ -f "{token_env_file}" ]; then
+    # Source PIDCalib2-specific authentication script if available
+    if [ -f "{pidcalib_auth_script}" ]; then
+        echo "Sourcing PIDCalib2 authentication script: {pidcalib_auth_script}"
+        source "{pidcalib_auth_script}"
+    elif [ -f "{token_env_file}" ]; then
         echo "Sourcing token environment from {token_env_file}"
         source "{token_env_file}"
     else
-        echo "Token environment file not found at {token_env_file}"
+        echo "No authentication files found"
     fi
 
-    # Export authentication tokens to ensure subprocess access
+    # Export authentication tokens to ensure subprocess access (fallback)
     export CERN_OIDC_TOKEN="{oidc_token}"
     export TOKEN="{oidc_token}"
     export AUTH_TOKEN="{oidc_token}"
     export BEARER_TOKEN="{oidc_token}"
     export ACCESS_TOKEN="{oidc_token}"
-
+    
+    # Additional authentication environment variables that might be needed
+    export OIDC_TOKEN="{oidc_token}"
+    export HTTP_AUTHORIZATION="Bearer {oidc_token}"
+    export AUTHORIZATION="Bearer {oidc_token}"
+    
+    # Set up authentication for Python requests and urllib
+    export REQUESTS_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+    export CURL_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+    
     # Function to check if we have a valid token
     check_auth() {{
         if [ -z "$CERN_OIDC_TOKEN" ]; then
@@ -127,12 +145,20 @@ class JobWriterMixin:
             return 1
         fi
         echo "CERN_OIDC_TOKEN found (length: ${{#CERN_OIDC_TOKEN}})"
+        echo "Token preview: ${{CERN_OIDC_TOKEN:0:50}}..."
         return 0
     }}
 
     # Check authentication status
     echo "Checking authentication status..."
     check_auth
+    
+    # Try to verify authentication by testing access to CERN resources
+    echo "Testing CERN authentication..."
+    if command -v curl >/dev/null 2>&1; then
+        curl_test=$(curl -s -H "Authorization: Bearer $CERN_OIDC_TOKEN" -o /dev/null -w "%{{http_code}}" "https://cern.ch" 2>/dev/null || echo "000")
+        echo "CERN auth test HTTP response: $curl_test"
+    fi
 
     # Set XRootD timeouts (in seconds)
     export XRD_TIMEOUT=1800
@@ -146,37 +172,151 @@ class JobWriterMixin:
         local retry_count=0
         local success=0
         
+        # Pre-check: Try to authenticate with auth-get-user-token if available
+        if command -v auth-get-user-token >/dev/null 2>&1; then
+            echo "Pre-authenticating with auth-get-user-token..."
+            # Try to refresh or verify token
+            auth-get-user-token -c ddmisid -v -x 2>/dev/null || echo "Pre-auth warning: could not refresh token"
+        fi
+        
         while [ $retry_count -lt $max_retries ]; do
             echo "Attempt $((retry_count + 1)) of $max_retries at $(date)"
             echo "Environment check - CERN_OIDC_TOKEN present: ${{CERN_OIDC_TOKEN:+YES}}${{CERN_OIDC_TOKEN:-NO}}"
             
-            # Run PIDCalib2 with authentication environment properly set
-            env CERN_OIDC_TOKEN="$CERN_OIDC_TOKEN" \\
-                TOKEN="$TOKEN" \\
-                AUTH_TOKEN="$AUTH_TOKEN" \\
-                BEARER_TOKEN="$BEARER_TOKEN" \\
-            lb-conda pidcalib pidcalib2.make_eff_hists \\
-                --sample {calib_sample} \\
-                --magnet {magpol} \\
-                --particle {species_pidcalib_alias} \\
-                --pid-cut '{pid_cut}' \\
-                --cut '{common_selection}' \\
-                --bin-var Brunel_P --bin-var Brunel_ETA --bin-var nTracks_Brunel \\
-                --binning-file {binning_path} \\
-                --output-dir {output_dir} \\
-                --max-files {max_calib_files if max_calib_files > 0 else 1} \\
-                --verbose
+            # Set up environment for the conda command to inherit all auth variables
+            export_vars="CERN_OIDC_TOKEN TOKEN AUTH_TOKEN BEARER_TOKEN ACCESS_TOKEN OIDC_TOKEN"
+            export_vars="$export_vars HTTP_AUTHORIZATION AUTHORIZATION"
             
-            local exit_code=$?
+            echo "Exporting authentication variables: $export_vars"
+            
+            # Create a temporary expect script to handle authentication prompts automatically
+            expect_script=$(mktemp /tmp/pidcalib_auth.XXXXXX)
+            cat > "$expect_script" << 'EOF'
+#!/usr/bin/expect -f
+set timeout 300
+set cmd [lindex $argv 0]
+eval spawn $cmd
+
+expect {{
+    "CERN SINGLE SIGN-ON" {{
+        puts "Authentication prompt detected - this should not happen with proper token setup"
+        puts "Terminating process as authentication cannot be automated"
+        exit 1
+    }}
+    "device.*code" {{
+        puts "Device code prompt detected - this should not happen with proper token setup"
+        puts "Terminating process as authentication cannot be automated"
+        exit 1
+    }}
+    "enter the following code" {{
+        puts "Manual authentication required - this should not happen with proper token setup"
+        puts "Terminating process as authentication cannot be automated"
+        exit 1
+    }}
+    eof {{
+        set wait_result [wait]
+        exit [lindex $wait_result 3]
+    }}
+    timeout {{
+        puts "Process timed out"
+        exit 124
+    }}
+}}
+EOF
+            chmod +x "$expect_script"
+            
+            # Run PIDCalib2 with authentication environment and expect wrapper
+            if command -v expect >/dev/null 2>&1; then
+                echo "Using expect wrapper to handle potential authentication prompts..."
+                {{ 
+                    env CERN_OIDC_TOKEN="$CERN_OIDC_TOKEN" \\
+                        TOKEN="$TOKEN" \\
+                        AUTH_TOKEN="$AUTH_TOKEN" \\
+                        BEARER_TOKEN="$BEARER_TOKEN" \\
+                        ACCESS_TOKEN="$ACCESS_TOKEN" \\
+                        OIDC_TOKEN="$OIDC_TOKEN" \\
+                        HTTP_AUTHORIZATION="$HTTP_AUTHORIZATION" \\
+                        AUTHORIZATION="$AUTHORIZATION" \\
+                    "$expect_script" \\
+                    "lb-conda pidcalib pidcalib2.make_eff_hists \\
+                        --sample {calib_sample} \\
+                        --magnet {magpol} \\
+                        --particle {species_pidcalib_alias} \\
+                        --pid-cut '{pid_cut}' \\
+                        --cut '{common_selection}' \\
+                        --bin-var Brunel_P --bin-var Brunel_ETA --bin-var nTracks_Brunel \\
+                        --binning-file {binning_path} \\
+                        --output-dir {output_dir} \\
+                        --max-files {max_calib_files if max_calib_files > 0 else 1} \\
+                        --verbose"
+                }} 2>&1 | tee -a "${{output_dir}}/pidcalib_full.log"
+                local exit_code=${{PIPESTATUS[0]}}
+            else
+                echo "expect not available, running directly (authentication prompts may block)..."
+                {{ 
+                    timeout 1800 env CERN_OIDC_TOKEN="$CERN_OIDC_TOKEN" \\
+                        TOKEN="$TOKEN" \\
+                        AUTH_TOKEN="$AUTH_TOKEN" \\
+                        BEARER_TOKEN="$BEARER_TOKEN" \\
+                        ACCESS_TOKEN="$ACCESS_TOKEN" \\
+                        OIDC_TOKEN="$OIDC_TOKEN" \\
+                        HTTP_AUTHORIZATION="$HTTP_AUTHORIZATION" \\
+                        AUTHORIZATION="$AUTHORIZATION" \\
+                    lb-conda pidcalib pidcalib2.make_eff_hists \\
+                        --sample {calib_sample} \\
+                        --magnet {magpol} \\
+                        --particle {species_pidcalib_alias} \\
+                        --pid-cut '{pid_cut}' \\
+                        --cut '{common_selection}' \\
+                        --bin-var Brunel_P --bin-var Brunel_ETA --bin-var nTracks_Brunel \\
+                        --binning-file {binning_path} \\
+                        --output-dir {output_dir} \\
+                        --max-files {max_calib_files if max_calib_files > 0 else 1} \\
+                        --verbose
+                }} 2>&1 | tee -a "${{output_dir}}/pidcalib_full.log"
+                local exit_code=${{PIPESTATUS[0]}}
+                
+                # Check if process was killed due to timeout (authentication prompt)
+                if [ $exit_code -eq 124 ]; then
+                    echo "Process timed out - likely due to authentication prompt"
+                fi
+            fi
+            
+            # Clean up expect script
+            rm -f "$expect_script"
+            
+            local exit_code=${{PIPESTATUS[0]}}
             echo "PIDCalib2 exit code: $exit_code"
+            
+            # Check if the error was authentication-related
+            if [ $exit_code -ne 0 ]; then
+                if grep -q "CERN SINGLE SIGN-ON\\|device.*code\\|auth.cern.ch" "${{output_dir}}/pidcalib_full.log" 2>/dev/null; then
+                    echo "Authentication error detected. Attempting to handle..."
+                    
+                    # Try to use kinit if available
+                    if command -v kinit >/dev/null 2>&1; then
+                        echo "Attempting kinit authentication..."
+                        # Note: This would require password input, which we can't automate
+                        # kinit <user>@CERN.CH would need to be run manually
+                    fi
+                    
+                    # Try alternative authentication method
+                    if command -v auth-get-user-token >/dev/null 2>&1; then
+                        echo "Attempting OIDC token refresh..."
+                        auth-get-user-token -c ddmisid -v 2>/dev/null || echo "OIDC refresh failed"
+                    fi
+                else
+                    echo "Non-authentication error detected"
+                fi
+            fi
             
             if [ $exit_code -eq 0 ]; then
                 success=1
                 break
             else
                 echo "Attempt $((retry_count + 1)) failed with exit code $exit_code"
-                echo "Retrying in 30 seconds..."
-                sleep 30
+                echo "Retrying in 60 seconds..."
+                sleep 60
                 ((retry_count++))
             fi
         done

@@ -127,6 +127,15 @@ def run(snakemake_args):
     # Re-export after kinit in case it cleared environment variables
     if ACCESS_TOKEN.exists():
         oidc_export_env("CERN_OIDC_TOKEN")
+        
+        # Create PIDCalib2-specific authentication script
+        try:
+            from ddmisid.auth import create_pidcalib_auth_script
+            auth_script = create_pidcalib_auth_script()
+            logger.info(f"PIDCalib2 authentication script created: {auth_script}")
+        except Exception as e:
+            logger.warning(f"Could not create PIDCalib2 auth script: {e}")
+        
         logger.info("OIDC token re-exported after kinit for subprocess inheritance")
     else:
         logger.warning("No OIDC access token found. You may need to authenticate again.")
