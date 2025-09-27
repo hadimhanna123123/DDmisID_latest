@@ -3,6 +3,7 @@
 from pydantic import ValidationError  # Correct the typo
 from .pydantic_config_model import DDmisIDConfig
 import subprocess
+import os
 from loguru import logger
 from tabulate import tabulate
 from pathlib import Path
@@ -54,7 +55,41 @@ def _run_snakemake(snakemake_args):
     """Wrapper for running the Snakemake pipeline with dynamic flags."""
     try:
         cmd = ["snakemake"] + list(snakemake_args)
-        logger.info(f"Running Snakemake with command: {' '.join(cmd)}") 
-        subprocess.run(cmd, check=True)
+        logger.info(f"Running Snakemake with command: {' '.join(cmd)}")
+        
+        # Create environment with current environment plus ensure OIDC token is passed
+        env = os.environ.copy()
+        
+        # Ensure OIDC token is in environment for subprocesses
+        if "CERN_OIDC_TOKEN" not in env:
+            logger.warning("CERN_OIDC_TOKEN not found in environment, subprocesses may need to authenticate")
+        else:
+            logger.info("CERN_OIDC_TOKEN found in environment, passing to Snakemake subprocesses")
+        
+        subprocess.run(cmd, check=True, env=env)
     except subprocess.CalledProcessError as e:
+        # Check if this is a lock error
+        if e.returncode == 1:
+            # Try to get the error output to check if it's a lock issue
+            try:
+                # Run the command again to capture stderr
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if "Directory cannot be locked" in result.stderr or "LockException" in result.stderr:
+                    logger.warning("Snakemake directory is locked. Attempting to unlock...")
+                    
+                    # Run snakemake --unlock
+                    unlock_cmd = ["snakemake", "--unlock"]
+                    logger.info(f"Running unlock command: {' '.join(unlock_cmd)}")
+                    subprocess.run(unlock_cmd, check=True)
+                    
+                    # Retry the original command with environment
+                    logger.info(f"Retrying Snakemake command: {' '.join(cmd)}")
+                    env = os.environ.copy()
+                    subprocess.run(cmd, check=True, env=env)
+                    return
+            except subprocess.CalledProcessError as unlock_error:
+                logger.error(f"Failed to unlock or retry Snakemake: {unlock_error}")
+                raise e
+        
+        # If it's not a lock error or unlock failed, re-raise the original error
         raise

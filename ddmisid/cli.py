@@ -1,8 +1,9 @@
 """Command-line interface to build the DDmisID engine"""
 
 import click
+import os
 from .engine import _run_snakemake, _load_config, get_config, _load_validated_config
-from ddmisid.auth import kinit
+from ddmisid.auth import kinit, oidc_device_login, oidc_export_env, ACCESS_TOKEN
 from pydantic import ValidationError
 from loguru import logger
 from pathlib import Path
@@ -18,6 +19,40 @@ logger.add(
     retention="7 days",
     level="INFO",
 )
+
+
+def ensure_cern_oidc_auth():
+    """Ensure CERN OIDC authentication is available.
+    
+    This function checks if a valid OIDC token exists and if not,
+    initiates the device flow authentication.
+    """
+    # Use the standard CERN client ID that most tools use
+    CLIENT_ID = "ddmisid"  # Registered client ID at https://application-portal.web.cern.ch/
+
+   
+    # Check if we already have a valid token
+    if ACCESS_TOKEN.exists():
+        logger.info("OIDC token found, exporting to environment")
+        oidc_export_env("CERN_OIDC_TOKEN")
+        
+        # Debug: Print environment variable status
+        logger.info(f"CERN_OIDC_TOKEN set: {'CERN_OIDC_TOKEN' in os.environ}")
+        if "CERN_OIDC_TOKEN" in os.environ:
+            token_preview = os.environ["CERN_OIDC_TOKEN"][:20] + "..." if len(os.environ["CERN_OIDC_TOKEN"]) > 20 else os.environ["CERN_OIDC_TOKEN"]
+            logger.info(f"Token preview: {token_preview}")
+        
+        return
+    
+    # No token found, start device flow
+    logger.info("OIDC authentication required - starting device flow")
+    try:
+        oidc_device_login(CLIENT_ID, verbose=True)
+        oidc_export_env("CERN_OIDC_TOKEN")
+        logger.info("OIDC authentication completed successfully")
+    except Exception as e:
+        logger.error(f"OIDC authentication failed: {e}")
+        raise
 
 
 @click.group()  # Add this to ensure cli group is registered
@@ -72,17 +107,25 @@ def run(snakemake_args):
     This command passes any Snakemake flag to the workflow.
 
     Example:
-        ddmisid-engine run --cores 4 --dry-run
+        ddmisid-engine run -- --cores 4 --dry-run
     """
-    # initialise kerberos ticket to access EOS
-    config = get_config()
-    if config is None:
-        logger.error("Config not set. Please build the DDmisID engine first.")
+    # Step 1: Ensure CERN OIDC authentication
+    ensure_cern_oidc_auth()
+    
+    # Step 2: Load config and initialize Kerberos
+    try:
+        _load_validated_config()
+    except FileNotFoundError:
+        logger.error("Config not set. Please build the DDmisID engine first with 'ddmisid-engine build'.")
         return
-    kinit(config.user_id)
-    logger.info(f"Running the Snakemake pipeline with arguments: {snakemake_args}")
+    
+    config = get_config()
 
-    # run the backend snakemake pipeline
+    kinit(config.user_id)
+    
+    # Step 3: Run Snakemake pipeline
+    logger.info(f"Running the Snakemake pipeline with arguments: {snakemake_args}")
+    
     try:
         _run_snakemake(snakemake_args)
     except Exception as e:
