@@ -1,0 +1,4 @@
+# Requirements for the DDmisID authentication monitoring script
+# Install with: pip install -r requirements-auth-monitoring.txt
+
+watchdog>=2.1.0
