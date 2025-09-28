@@ -134,5 +134,66 @@ def run(snakemake_args):
         logger.info("Success: DDmisID engine run complete.")
 
 
+@cli.command()
+def test_auth_monitor():
+    """Test the authentication monitoring system."""
+    logger.info("Testing authentication monitoring system...")
+    
+    try:
+        from .auth_monitor import create_monitoring_context, AuthPatternDetector
+        from pathlib import Path
+        import tempfile
+        import time
+        
+        # Create a temporary log file with authentication prompts
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+            test_log_path = Path(f.name)
+            f.write("Starting test process...\n")
+        
+        # Test pattern detection
+        detector = AuthPatternDetector()
+        test_content = """
+        CERN SINGLE SIGN-ON
+        On your tablet, phone or computer, go to:
+        https://auth.cern.ch/auth/realms/cern/device
+        and enter the following code:
+        TEST-1234
+        You may also open the following link directly and follow the instructions:
+        https://auth.cern.ch/auth/realms/cern/device?user_code=TEST-1234
+        """
+        
+        detection = detector.detect_oidc_prompt(test_content)
+        if detection:
+            logger.success("✅ Pattern detection working correctly")
+            logger.info(f"Detected patterns: {list(detection.keys())}")
+            if 'extracted_code' in detection:
+                logger.info(f"Extracted device code: {detection['extracted_code']}")
+        else:
+            logger.error("❌ Pattern detection failed")
+            return
+        
+        # Test file monitoring
+        logger.info("Testing file monitoring...")
+        with create_monitoring_context() as monitor:
+            monitor.start_monitoring([], [test_log_path])
+            
+            # Append authentication prompt to the file
+            with open(test_log_path, 'a') as f:
+                f.write("\n" + test_content)
+            
+            # Give the monitor time to detect the change
+            time.sleep(2)
+        
+        # Cleanup
+        test_log_path.unlink()
+        logger.success("✅ Authentication monitoring test completed successfully")
+        
+    except ImportError as e:
+        logger.error(f"❌ Authentication monitoring not available: {e}")
+        logger.info("Install dependencies with: pip install watchdog")
+    except Exception as e:
+        logger.error(f"❌ Test failed: {e}")
+
+
 if __name__ == "__main__":
     cli()

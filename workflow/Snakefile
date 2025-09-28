@@ -94,7 +94,7 @@ rule extract_pid_effs:
     log: 
         "logs/workflow/{year}/{magpol}/{dllmu_bin}/{species}/{eff_dirs}/pideffx.log"
     run:
-        shell("python ddmisid/auth_monitor.py --log-file {log} --timeout 1800 bash {input.bash_file}")
+        shell("bash {input.bash_file} &> {log}")
  
 
 rule process_pid_effs:

@@ -1,0 +1,14 @@
+# Additional requirements for DDmisID authentication monitoring
+# These are already included in setup.py but listed here for reference
+
+# File system monitoring for real-time log detection
+watchdog>=3.0.0
+
+# Already in main requirements but needed for monitoring:
+# loguru - for logging
+# pathlib - for path handling (built-in)
+# threading - for thread-safe operations (built-in)  
+# subprocess - for running auth commands (built-in)
+# re - for regex pattern matching (built-in)
+# json - for token handling (built-in)
+# os - for environment variables (built-in)
