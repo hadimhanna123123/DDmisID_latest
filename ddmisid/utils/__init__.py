@@ -14,8 +14,3 @@ from .histogram import (
     EfficiencyHistogramProcessor,
     load_hist,
 )
-from .auth_monitor import (
-    AuthenticationMonitor,
-    run_with_auth_monitoring,
-    run_shell_with_auth_monitoring,
-)

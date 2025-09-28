@@ -115,26 +115,11 @@ def oidc_export_env(var_name: str = "CERN_OIDC_TOKEN") -> None:
     token = ACCESS_TOKEN.read_text().strip()
     
     # Export to multiple common environment variable names
-    env_vars = [var_name, "CERN_OIDC_TOKEN", "TOKEN", "AUTH_TOKEN", "BEARER_TOKEN", "ACCESS_TOKEN"]
+    env_vars = [var_name, "CERN_OIDC_TOKEN", "TOKEN", "AUTH_TOKEN", "BEARER_TOKEN"]
     for env_var in env_vars:
         os.environ[env_var] = token
     
     logger.info(f"Exported OIDC access token to environment variables: {', '.join(env_vars)}")
-    
-    # Also write token to a temporary file that can be sourced by bash scripts
-    token_file = DEFAULT_TOKEN_DIR / "current_token.env"
-    with open(token_file, "w") as f:
-        for env_var in env_vars:
-            f.write(f'export {env_var}="{token}"\n')
-    
-    # Make the file readable only by the user for security
-    token_file.chmod(0o600)
-    logger.info(f"Token environment file created at {token_file}")
-
-
-def get_token_env_file() -> Path:
-    """Get the path to the token environment file."""
-    return DEFAULT_TOKEN_DIR / "current_token.env"
 
 
 def oidc_refresh_token(client_id: str) -> dict:

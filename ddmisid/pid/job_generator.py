@@ -93,7 +93,7 @@ class JobWriterMixin:
         """Construct the bash command for PID-efficiency extraction job execution."""
         # Create output directory if it doesn't exist
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+        # [TODO] make sure if the bin-vars should be hardcoded as such or also from the json file
         # Build the job command with retry logic
         job_script = f"""#!/bin/bash
 
@@ -112,7 +112,7 @@ class JobWriterMixin:
         while [ $retry_count -lt $max_retries ]; do
             echo "Attempt $((retry_count + 1)) of $max_retries at $(date)"
             
-            # Run PIDCalib2 - authentication monitoring will handle any auth prompts
+            # Run PIDCalib2 with a single file first to test the connection
             lb-conda pidcalib pidcalib2.make_eff_hists \\
                 --sample {calib_sample} \\
                 --magnet {magpol} \\
@@ -125,18 +125,14 @@ class JobWriterMixin:
                 --max-files {max_calib_files if max_calib_files > 0 else 1} \\
                 --verbose
             
-            local exit_code=$?
-            echo "PIDCalib2 exit code: $exit_code"
-            
-            if [ $exit_code -eq 0 ]; then
+            if [ $? -eq 0 ]; then
                 success=1
                 break
-            else
-                echo "Attempt $((retry_count + 1)) failed with exit code $exit_code"
-                echo "Retrying in 30 seconds..."
-                sleep 30
-                ((retry_count++))
             fi
+            
+            echo "Attempt $((retry_count + 1)) failed. Retrying in 30 seconds..."
+            sleep 30
+            ((retry_count++))
         done
         
         return $((1 - success))
