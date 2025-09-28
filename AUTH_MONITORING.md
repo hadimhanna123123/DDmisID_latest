@@ -1,287 +1,236 @@
-# Authentication Monitoring System for DDmisID
+# Authentication Prompt Display for DDmisID
 
 ## Overview
 
-The DDmisID authentication monitoring system provides real-time detection and handling of CERN OIDC and Kerberos authentication prompts that appear in subprocess log files during workflow execution.
+The DDmisID authentication prompt display system monitors log files in real-time and shows CERN OIDC authentication prompts in your main terminal, so you don't have to hunt through multiple log files to find them.
 
 ## Problem Statement
 
-When running DDmisID workflows, subprocess tools like PIDCalib2 may prompt for authentication even when the main process has already authenticated. This creates several issues:
+When running DDmisID workflows, subprocess tools like PIDCalib2 sometimes prompt for authentication. These prompts appear buried in log files, creating problems:
 
-1. **Authentication prompts buried in log files** - Users don't see them immediately
-2. **Workflow interruption** - Processes hang waiting for authentication
-3. **Manual intervention required** - Users must manually authenticate and restart workflows
-4. **Token expiration during long runs** - Multi-hour workflows may exceed token lifetimes
+1. **Hidden prompts** - Authentication requests are buried in log files among thousands of lines
+2. **Process waiting** - Your workflow hangs while waiting for authentication you can't see
+3. **Manual searching** - You have to search through multiple log files to find the prompt
+4. **Delayed response** - By the time you find the prompt, you've lost valuable processing time
 
-## Solution: Real-time Log Monitoring
+## Solution: Real-time Prompt Display
 
-The authentication monitoring system continuously watches log files and directories for authentication prompts using regex pattern matching, then automatically handles re-authentication while keeping the main processes running.
+The system monitors log files and displays authentication prompts prominently in your main terminal:
 
-## Key Features
+```
+======================================================================
+� AUTHENTICATION REQUIRED (from pidcalib_electron_job.log)
+======================================================================
+📱 Go to: https://auth.cern.ch/auth/realms/cern/device
+🔑 Enter code: ZPXN-ZNKP
+🔗 Or click: https://auth.cern.ch/auth/realms/cern/device?user_code=ZPXN-ZNKP
+======================================================================
+⏳ Waiting for authentication... (process will continue automatically)
+======================================================================
+```
 
-### 🔍 **Real-time Pattern Detection**
-Monitors log files for specific authentication patterns:
+## How It Works
 
-**OIDC Patterns:**
+### � **Real-time Log Monitoring**
+- Watches log directories using file system events (no polling)
+- Detects changes in `.log`, `.txt` files or files containing "log" in the name
+- Only processes new content added since last check
+
+### � **Pattern Recognition**
+Detects these patterns in log files:
 - `CERN SINGLE SIGN-ON`
-- `On your tablet, phone or computer, go to:`
-- `https://auth.cern.ch/auth/realms/cern/device`
-- `and enter the following code:`
 - `device?user_code=XXXX-XXXX` (extracts the device code)
+- Direct device codes like `ZPXN-ZNKP` on their own lines
 
-**Kerberos Patterns:**
-- `Password for user@CERN.CH:`
-- `kinit.*expired`
-- `kinit.*failed`
-
-### 🔄 **Automatic Re-authentication**
-When OIDC prompts are detected:
-1. Extracts the device code from log files
-2. Displays user-friendly authentication instructions
-3. Automatically runs `auth-get-user-token` to refresh tokens
-4. Updates environment variables for subprocesses
-
-### 📁 **Flexible Monitoring**
-- **Directory monitoring**: Watches entire log directories recursively
-- **Specific file monitoring**: Monitors individual log files
-- **Pattern-based detection**: Only monitors files with `.log`, `.txt` extensions or "log" in filename
-
-### 🛡️ **Thread-safe Operation**
-- Uses file system event handlers for efficient monitoring
-- Thread-safe authentication handling prevents race conditions
-- Maintains file read positions to avoid re-processing old log content
+### 🎯 **Smart Display**
+- Shows prompts immediately in your main terminal
+- Extracts device codes automatically
+- Provides clickable URLs for easy authentication
+- Avoids duplicate notifications for the same code
 
 ## Usage
 
-### Automatic Integration (Recommended)
+### Automatic Integration (Default)
 
-The monitoring system is automatically integrated into the DDmisID engine. Simply run:
+Simply run your DDmisID workflow as usual:
 
 ```bash
 ddmisid-engine run -- --cores 4
 ```
 
-The system will automatically:
-- Start monitoring `logs/`, `workflow/logs/`, and `.snakemake/log/` directories
-- Detect authentication prompts in real-time
-- Handle re-authentication automatically
-- Display user-friendly messages when manual intervention is needed
+The system automatically:
+- Monitors `logs/`, `workflow/logs/`, and `.snakemake/log/` directories
+- Displays authentication prompts in your terminal
+- Keeps running while you authenticate in your browser
+
+### Test the System
+
+```bash
+# Test the monitoring system
+ddmisid-engine test-auth-monitor
+
+# Run a simple demo
+python demo_simple_auth_monitor.py
+```
 
 ### Manual Integration
 
-For custom workflows, you can use the monitoring system directly:
+For custom workflows:
 
 ```python
-from ddmisid.auth_monitor import create_monitoring_context
+from ddmisid.auth_monitor import create_auth_monitor
 from pathlib import Path
 
-# Monitor specific directories and files
-log_dirs = [Path("logs"), Path("custom_logs")]
-specific_files = [Path("important.log")]
-
-with create_monitoring_context("ddmisid") as monitor:
-    monitor.start_monitoring(log_dirs, specific_files)
+# Monitor specific directories
+with create_auth_monitor() as monitor:
+    monitor.start_monitoring([Path("logs"), Path("custom_logs")])
     
     # Your workflow code here
-    # The monitor runs in the background
-    run_your_workflow()
+    # Authentication prompts will be displayed automatically
+    run_your_pidcalib_jobs()
 ```
 
-### Advanced Usage
+## Typical Workflow
 
-For fine-grained control:
+1. **Start your workflow**: `ddmisid-engine run -- --cores 4`
+2. **System starts monitoring**: Log files are watched automatically
+3. **PIDCalib2 jobs run**: Multiple processes create log files
+4. **Authentication needed**: One process needs OIDC authentication
+5. **Prompt displayed**: You see the prompt immediately in your terminal:
+   ```
+   🔐 AUTHENTICATION REQUIRED (from pidcalib_kaon_job.log)
+   📱 Go to: https://auth.cern.ch/auth/realms/cern/device
+   🔑 Enter code: ZPXN-ZNKP
+   ```
+6. **You authenticate**: Open browser, enter code
+7. **Process continues**: PIDCalib2 job resumes automatically
+8. **Workflow completes**: All jobs finish successfully
+
+## Configuration
+
+### Default Monitoring Locations
+- `logs/` - Standard DDmisID log directory
+- `workflow/logs/` - Snakemake workflow logs  
+- `.snakemake/log/` - Snakemake internal logs
+
+### Monitored File Types
+- Files ending in `.log`
+- Files ending in `.txt`
+- Files with "log" in the filename
+
+### Custom Monitoring
 
 ```python
-from ddmisid.auth_monitor import AuthMonitorManager
-from pathlib import Path
+from ddmisid.auth_monitor import AuthPromptMonitor
 
-# Create and configure the monitor
-monitor = AuthMonitorManager(client_id="ddmisid")
+# Create custom monitor
+monitor = AuthPromptMonitor()
 
-# Start monitoring
-monitor.start_monitoring(
-    log_directories=[Path("logs")],
-    specific_files=[Path("critical.log")]
-)
+# Add custom directories
+custom_dirs = [Path("my_logs"), Path("pidcalib_outputs")]
+monitor.start_monitoring(custom_dirs)
 
 try:
-    # Your long-running workflow
-    run_pidcalib_jobs()
+    # Your workflow
+    run_custom_jobs()
 finally:
     monitor.stop_monitoring()
 ```
 
-## Authentication Flow
-
-### OIDC Authentication Detection
-
-When the system detects an OIDC prompt:
-
-```
-🔐 OIDC authentication required (detected in pidcalib_job.log)
-📱 Device code detected: TLIF-MMHA
-
-============================================================
-🔐 AUTHENTICATION REQUIRED
-📱 Go to: https://auth.cern.ch/auth/realms/cern/device
-🔑 Enter code: TLIF-MMHA
-============================================================
-
-🔄 Attempting automatic OIDC re-authentication...
-✅ OIDC re-authentication successful
-```
-
-### Kerberos Authentication Detection
-
-When Kerberos authentication is needed:
-
-```
-🎫 Kerberos authentication required (detected in job.log)
-
-============================================================
-🎫 KERBEROS AUTHENTICATION REQUIRED
-Please run: kinit <username>@CERN.CH
-============================================================
-```
-
-## Configuration
-
-The monitoring system uses these default paths:
-- **Token storage**: `~/.cache/cern-oidc/`
-- **Log directories**: `logs/`, `workflow/logs/`, `.snakemake/log/`
-- **Client ID**: `ddmisid`
-
-You can customize these by:
-
-```python
-from ddmisid.auth_monitor import AuthMonitorManager
-
-# Custom client ID
-monitor = AuthMonitorManager(client_id="custom-client")
-
-# Custom log directories
-custom_dirs = [Path("custom/logs"), Path("another/logdir")]
-monitor.start_monitoring(custom_dirs)
-```
-
 ## Error Handling
 
-The system gracefully handles various error conditions:
-
 ### Missing Dependencies
-If the `watchdog` library is not available, DDmisID falls back to standard execution without monitoring.
-
-### File System Errors
-- Missing log directories are skipped with warnings
-- File permission errors are logged but don't stop monitoring
-- Corrupted log files are handled with encoding fallbacks
-
-### Authentication Failures
-- Failed automatic re-authentication triggers manual intervention messages
-- Multiple authentication attempts are prevented with thread locks
-- Clear error messages guide users through manual authentication
-
-## Integration with Snakemake
-
-The monitoring system integrates seamlessly with Snakemake workflows:
-
-```python
-from ddmisid.auth_monitor import monitor_snakemake_logs
-
-# Run Snakemake with authentication monitoring
-monitor_snakemake_logs(["--cores", "4", "--verbose"], client_id="ddmisid")
-```
-
-This automatically:
-- Starts monitoring before Snakemake execution
-- Handles authentication prompts during the workflow
-- Stops monitoring when Snakemake completes
-- Preserves all Snakemake functionality and error handling
-
-## Testing
-
-Test the monitoring system:
-
+If `watchdog` is not installed, DDmisID falls back to standard execution without monitoring:
 ```bash
-cd /path/to/ddmisid
-python -m ddmisid.auth_monitor test
+pip install watchdog
 ```
 
-This creates a test log file with authentication prompts and verifies the detection system works correctly.
+### File Access Issues
+- Missing log directories are silently skipped
+- File permission errors don't stop monitoring
+- Locked files during writing are handled gracefully
 
-## Performance Considerations
+### No False Positives
+- Only displays prompts with valid device codes
+- Avoids duplicate notifications
+- Ignores old log content when starting
+
+## Performance
 
 ### Efficiency
-- Uses file system events instead of polling for minimal CPU usage
-- Only processes new log content since last read
-- Regex compilation is done once at startup
+- Uses file system events (no polling)
+- Minimal CPU and memory usage
+- Only processes new log content
+- Regex patterns compiled once at startup
 
-### Memory Usage
-- Maintains minimal state (file positions and handles)
-- Automatic cleanup when monitoring stops
-- No log content is stored in memory
-
-### Scalability
+### Scalability  
 - Can monitor hundreds of log files simultaneously
-- Thread-safe design allows concurrent authentication handling
-- Minimal impact on main workflow performance
+- No impact on main workflow performance
+- Automatic cleanup when monitoring stops
 
 ## Troubleshooting
 
-### Common Issues
+### Q: Authentication prompts not showing
+**Solutions:**
+- Check that log files have `.log`, `.txt` extensions or contain "log"
+- Verify the log directories exist and are writable
+- Ensure `watchdog` is installed: `pip install watchdog`
 
-**Q: Authentication prompts are not detected**
-- Check that log files have `.log`, `.txt` extensions or contain "log" in filename
-- Verify the log directory is being monitored
-- Check file permissions allow reading
+### Q: System shows old prompts
+**Solutions:**
+- The system only shows new prompts that appear after monitoring starts
+- If you see old prompts, they're likely from a new process writing to the same log file
 
-**Q: Automatic re-authentication fails**
-- Ensure `auth-get-user-token` is available in PATH
-- Check CERN network connectivity
-- Verify client ID is registered with CERN OIDC
+### Q: Multiple prompts for same code
+**Solutions:**
+- The system automatically deduplicates based on device codes
+- If you see duplicates, they likely have different codes
 
-**Q: Monitoring stops unexpectedly**
-- Check system logs for file system errors
-- Ensure log directories weren't deleted during workflow
-- Verify sufficient disk space for log files
+## Integration with Existing Tools
 
-### Debug Mode
+### Snakemake Integration
+Automatically integrated - no changes needed to your Snakemake workflows.
 
-Enable detailed logging:
+### PIDCalib2 Compatibility
+Works with any version of PIDCalib2 that outputs standard OIDC prompts.
 
-```python
-import logging
-logging.getLogger("ddmisid.auth_monitor").setLevel(logging.DEBUG)
+### CERN Infrastructure
+- Uses standard CERN OIDC device flow
+- No custom authentication methods
+- Compatible with existing token management
+
+## Example Output
+
+When running your DDmisID workflow, instead of authentication prompts being buried in log files like this:
+
+```
+# Hidden in logs/pidcalib/electron/job_2024_up.log (line 1,247 of 2,500)
+Processing calibration file 15 of 200...
+CERN SINGLE SIGN-ON
+On your tablet, phone or computer, go to:
+https://auth.cern.ch/auth/realms/cern/device  
+and enter the following code:
+ZPXN-ZNKP
+Waiting for authentication...
 ```
 
-### Manual Fallback
+You'll see this prominently in your main terminal:
 
-If monitoring fails, you can always authenticate manually:
-
-```bash
-# OIDC authentication
-auth-get-user-token -c ddmisid -v
-
-# Kerberos authentication
-kinit <username>@CERN.CH
-
-# Export tokens for subprocesses
-export CERN_OIDC_TOKEN=$(cat ~/.cache/cern-oidc/access.token)
+```
+======================================================================
+🔐 AUTHENTICATION REQUIRED (from job_2024_up.log)
+======================================================================
+📱 Go to: https://auth.cern.ch/auth/realms/cern/device
+🔑 Enter code: ZPXN-ZNKP
+🔗 Or click: https://auth.cern.ch/auth/realms/cern/device?user_code=ZPXN-ZNKP
+======================================================================
+⏳ Waiting for authentication... (process will continue automatically)
+======================================================================
 ```
 
-## Security Considerations
+## Security
 
-### Token Security
-- Token files are created with restricted permissions (600)
-- Token directory has secure permissions (700)
-- Tokens are never logged or displayed in plaintext
-
-### Process Security
-- Monitoring runs with same privileges as main process
-- No elevation of privileges required
-- Authentication uses official CERN tools
-
-### Network Security
-- All authentication uses HTTPS
-- Standard CERN OIDC security protocols
-- No custom authentication implementations
+- **No token handling** - System only displays prompts, doesn't manage tokens
+- **Read-only monitoring** - Only reads log files, never modifies them
+- **Standard CERN auth** - Uses official CERN OIDC device flow
+- **No network access** - Monitoring happens locally on your filesystem

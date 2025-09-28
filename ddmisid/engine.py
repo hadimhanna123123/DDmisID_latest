@@ -52,14 +52,14 @@ def _load_validated_config():
 
 
 def _run_snakemake(snakemake_args):
-    """Wrapper for running the Snakemake pipeline with dynamic flags and authentication monitoring."""
+    """Wrapper for running the Snakemake pipeline with dynamic flags and authentication prompt display."""
     try:
         # Import the monitoring system
         from .auth_monitor import monitor_snakemake_logs
         
-        # Use the monitoring wrapper to run Snakemake with auth detection
-        logger.info("🔍 Starting Snakemake with authentication monitoring...")
-        monitor_snakemake_logs(list(snakemake_args), client_id="ddmisid")
+        # Use the monitoring wrapper to display auth prompts from log files
+        logger.info("🔍 Starting Snakemake with authentication prompt monitoring...")
+        monitor_snakemake_logs(list(snakemake_args))
         
     except ImportError as e:
         # Fallback to original method if monitoring is not available

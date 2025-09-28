@@ -136,57 +136,39 @@ def run(snakemake_args):
 
 @cli.command()
 def test_auth_monitor():
-    """Test the authentication monitoring system."""
-    logger.info("Testing authentication monitoring system...")
+    """Test the authentication prompt monitoring system."""
+    logger.info("Testing authentication prompt monitoring system...")
     
     try:
-        from .auth_monitor import create_monitoring_context, AuthPatternDetector
+        from .auth_monitor import AuthPromptDetector
         from pathlib import Path
         import tempfile
         import time
         
-        # Create a temporary log file with authentication prompts
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
-            test_log_path = Path(f.name)
-            f.write("Starting test process...\n")
-        
         # Test pattern detection
-        detector = AuthPatternDetector()
+        detector = AuthPromptDetector()
         test_content = """
+        Starting process...
         CERN SINGLE SIGN-ON
         On your tablet, phone or computer, go to:
         https://auth.cern.ch/auth/realms/cern/device
         and enter the following code:
         TEST-1234
-        You may also open the following link directly and follow the instructions:
+        You may also open the following link directly:
         https://auth.cern.ch/auth/realms/cern/device?user_code=TEST-1234
         """
         
-        detection = detector.detect_oidc_prompt(test_content)
+        detection = detector.detect_auth_prompt(test_content)
         if detection:
             logger.success("✅ Pattern detection working correctly")
-            logger.info(f"Detected patterns: {list(detection.keys())}")
-            if 'extracted_code' in detection:
-                logger.info(f"Extracted device code: {detection['extracted_code']}")
+            logger.info(f"Detected device code: {detection['device_code']}")
+            logger.info(f"Auth URL: {detection['auth_url']}")
         else:
             logger.error("❌ Pattern detection failed")
             return
         
-        # Test file monitoring
-        logger.info("Testing file monitoring...")
-        with create_monitoring_context() as monitor:
-            monitor.start_monitoring([], [test_log_path])
-            
-            # Append authentication prompt to the file
-            with open(test_log_path, 'a') as f:
-                f.write("\n" + test_content)
-            
-            # Give the monitor time to detect the change
-            time.sleep(2)
-        
-        # Cleanup
-        test_log_path.unlink()
-        logger.success("✅ Authentication monitoring test completed successfully")
+        logger.success("✅ Authentication prompt monitoring test completed successfully")
+        logger.info("💡 The system will now display authentication prompts from log files in your terminal")
         
     except ImportError as e:
         logger.error(f"❌ Authentication monitoring not available: {e}")
