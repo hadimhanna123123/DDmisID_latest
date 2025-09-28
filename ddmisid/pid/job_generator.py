@@ -93,46 +93,9 @@ class JobWriterMixin:
         """Construct the bash command for PID-efficiency extraction job execution."""
         # Create output directory if it doesn't exist
         output_dir.mkdir(parents=True, exist_ok=True)
-        # [TODO] make sure if the bin-vars should be hardcoded as such or also from the json file
-        
-        # Get the current OIDC token from environment if available
-        oidc_token = os.environ.get('CERN_OIDC_TOKEN', '')
-        
-        # Import the auth module to get the token env file path
-        from ddmisid.auth import get_token_env_file
-        token_env_file = get_token_env_file()
         
         # Build the job command with retry logic
         job_script = f"""#!/bin/bash
-
-    # Source token environment file if it exists
-    if [ -f "{token_env_file}" ]; then
-        echo "Sourcing token environment from {token_env_file}"
-        source "{token_env_file}"
-    else
-        echo "Token environment file not found at {token_env_file}"
-    fi
-
-    # Export authentication tokens to ensure subprocess access
-    export CERN_OIDC_TOKEN="{oidc_token}"
-    export TOKEN="{oidc_token}"
-    export AUTH_TOKEN="{oidc_token}"
-    export BEARER_TOKEN="{oidc_token}"
-    export ACCESS_TOKEN="{oidc_token}"
-
-    # Function to check if we have a valid token
-    check_auth() {{
-        if [ -z "$CERN_OIDC_TOKEN" ]; then
-            echo "WARNING: No CERN_OIDC_TOKEN found. Authentication may be required."
-            return 1
-        fi
-        echo "CERN_OIDC_TOKEN found (length: ${{#CERN_OIDC_TOKEN}})"
-        return 0
-    }}
-
-    # Check authentication status
-    echo "Checking authentication status..."
-    check_auth
 
     # Set XRootD timeouts (in seconds)
     export XRD_TIMEOUT=1800
@@ -148,17 +111,8 @@ class JobWriterMixin:
         
         while [ $retry_count -lt $max_retries ]; do
             echo "Attempt $((retry_count + 1)) of $max_retries at $(date)"
-            echo "Environment check - CERN_OIDC_TOKEN present: ${{CERN_OIDC_TOKEN:+YES}}${{CERN_OIDC_TOKEN:-NO}}"
             
-            # Capture both stdout and stderr to detect authentication prompts
-            local temp_output=$(mktemp)
-            local temp_error=$(mktemp)
-            
-            # Run PIDCalib2 with authentication environment properly set
-            env CERN_OIDC_TOKEN="$CERN_OIDC_TOKEN" \\
-                TOKEN="$TOKEN" \\
-                AUTH_TOKEN="$AUTH_TOKEN" \\
-                BEARER_TOKEN="$BEARER_TOKEN" \\
+            # Run PIDCalib2 - authentication monitoring will handle any auth prompts
             lb-conda pidcalib pidcalib2.make_eff_hists \\
                 --sample {calib_sample} \\
                 --magnet {magpol} \\
@@ -169,32 +123,9 @@ class JobWriterMixin:
                 --binning-file {binning_path} \\
                 --output-dir {output_dir} \\
                 --max-files {max_calib_files if max_calib_files > 0 else 1} \\
-                --verbose > "$temp_output" 2> "$temp_error"
+                --verbose
             
             local exit_code=$?
-            
-            # Check for authentication prompts in output
-            if grep -i "CERN SINGLE SIGN-ON\\|device.*code\\|auth.cern.ch\\|authentication" "$temp_output" "$temp_error" >/dev/null 2>&1; then
-                echo ""
-                echo "🔐🔐🔐 AUTHENTICATION REQUIRED 🔐🔐🔐"
-                echo "PIDCalib2 is requesting authentication!"
-                echo "Please check the main terminal for authentication instructions."
-                echo "Output from PIDCalib2:"
-                echo "----------------------------------------"
-                cat "$temp_output" "$temp_error" | head -20
-                echo "----------------------------------------"
-                echo ""
-            fi
-            
-            # Display output regardless
-            echo "PIDCalib2 stdout:"
-            cat "$temp_output"
-            echo "PIDCalib2 stderr:"
-            cat "$temp_error"
-            
-            # Clean up temp files
-            rm -f "$temp_output" "$temp_error"
-            
             echo "PIDCalib2 exit code: $exit_code"
             
             if [ $exit_code -eq 0 ]; then

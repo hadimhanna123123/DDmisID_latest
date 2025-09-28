@@ -12,6 +12,7 @@ Snakemake routine to orchestrate the requisite DDmisID stages:
 
 import shutil
 import os
+import subprocess
 from snakemake.io import glob_wildcards    
 import pyfiglet
 from ddmisid.engine import config
@@ -85,7 +86,7 @@ checkpoint generate_pid_efficiency_scripts:
 
 rule extract_pid_effs:
     """
-    Run the pideffx jobs as spawned in the previous step. Tallyt the resulting efficiency histograms.
+    Run the pideffx jobs as spawned in the previous step. Use authentication monitoring to handle CERN SSO prompts.
     """
     input:
         bash_file = "scratch/bin/{year}/{magpol}/{dllmu_bin}/{species}/{eff_dirs}/run.sh",
@@ -94,7 +95,35 @@ rule extract_pid_effs:
     log: 
         "logs/workflow/{year}/{magpol}/{dllmu_bin}/{species}/{eff_dirs}/pideffx.log"
     run:
-        shell("bash {input.bash_file} &> {log}")
+        # Import the authentication monitoring utility
+        from ddmisid.utils.auth_monitor import run_shell_with_auth_monitoring
+        import os
+        
+        try:
+            # Run the bash script with authentication monitoring
+            rule_logger.info(f"Running PIDCalib2 job: {input.bash_file}")
+            
+            # Use our custom runner that monitors for authentication prompts
+            result = run_shell_with_auth_monitoring(
+                script_path=str(input.bash_file),
+                cwd=os.getcwd(),
+                timeout=3600,  # 1 hour timeout
+                auth_timeout=600  # 10 minutes for user to authenticate
+            )
+            
+            # Log the output to the specified log file
+            with open(str(log), 'w') as log_file:
+                log_file.write(result.stdout)
+            
+            if result.returncode != 0:
+                rule_logger.error(f"PIDCalib2 job failed with return code {result.returncode}")
+                raise subprocess.CalledProcessError(result.returncode, input.bash_file)
+            else:
+                rule_logger.info(f"PIDCalib2 job completed successfully: {input.bash_file}")
+                
+        except Exception as e:
+            rule_logger.error(f"Error running PIDCalib2 job {input.bash_file}: {e}")
+            raise e
  
 
 rule process_pid_effs:

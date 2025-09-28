@@ -10,9 +10,6 @@ from pathlib import Path
 import json
 from ddmisid import read_config
 import sys
-import threading
-import queue
-import re
 # Global variable to store the validated config
 config = None
 config_path_json = Path(
@@ -20,30 +17,6 @@ config_path_json = Path(
 )  # Hidden directory for the validated config
 # book directory structure, if missing
 config_path_json.parent.mkdir(parents=True, exist_ok=True)
-
-
-def handle_detected_authentication():
-    """Helper function to handle authentication when detected in subprocess output."""
-    from .auth import oidc_device_login, oidc_export_env
-    
-    print("\n" + "="*60)
-    print("🔐 AUTHENTICATION HANDLER 🔐")
-    print("It appears that authentication is required.")
-    print("Would you like to authenticate now? (y/n)")
-    
-    response = input("Enter choice: ").strip().lower()
-    if response in ['y', 'yes']:
-        try:
-            print("Starting CERN OIDC authentication...")
-            oidc_device_login("ddmisid", verbose=True)
-            oidc_export_env("CERN_OIDC_TOKEN")
-            print("✅ Authentication completed successfully!")
-            print("You can now re-run your command.")
-        except Exception as e:
-            print(f"❌ Authentication failed: {e}")
-    else:
-        print("Authentication skipped. You may need to authenticate manually.")
-    print("="*60 + "\n")
 
 
 def _load_config(config_path: str):
@@ -79,53 +52,7 @@ def _load_validated_config():
 
 
 def _run_snakemake(snakemake_args):
-    """Wrapper for running the Snakemake pipeline with dynamic flags and authentication monitoring."""
-    import threading
-    import queue
-    import re
-    
-    def monitor_output(process, output_queue, stream_name):
-        """Monitor process output for authentication prompts."""
-        auth_patterns = [
-            r"CERN SINGLE SIGN-ON",
-            r"On your tablet, phone or computer, go to:",
-            r"https://auth\.cern\.ch/auth/realms/cern/device",
-            r"and enter the following code:",
-            r"You may also open the following link directly",
-            r"device\?user_code=",
-            r"Starting CERN OIDC device login",
-            r"OIDC authentication required"
-        ]
-        
-        while True:
-            try:
-                if stream_name == 'stdout':
-                    line = process.stdout.readline()
-                else:
-                    line = process.stderr.readline()
-                
-                if not line:
-                    break
-                    
-                line = line.decode('utf-8', errors='replace').strip()
-                if line:
-                    # Check if this line contains authentication information
-                    is_auth_line = any(re.search(pattern, line, re.IGNORECASE) for pattern in auth_patterns)
-                    
-                    if is_auth_line:
-                        # Surface authentication prompts to main terminal
-                        print(f"\n🔐 AUTHENTICATION REQUIRED 🔐")
-                        print(f"From {stream_name}: {line}")
-                        print("-" * 50)
-                        logger.info(f"Authentication prompt detected: {line}")
-                    
-                    # Also put in queue for logging
-                    output_queue.put((stream_name, line, is_auth_line))
-                    
-            except Exception as e:
-                logger.error(f"Error monitoring {stream_name}: {e}")
-                break
-    
+    """Wrapper for running the Snakemake pipeline with dynamic flags."""
     try:
         cmd = ["snakemake"] + list(snakemake_args)
         logger.info(f"Running Snakemake with command: {' '.join(cmd)}")
@@ -139,74 +66,7 @@ def _run_snakemake(snakemake_args):
         else:
             logger.info("CERN_OIDC_TOKEN found in environment, passing to Snakemake subprocesses")
         
-        # Start process with streaming output
-        process = subprocess.Popen(
-            cmd, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE,
-            env=env,
-            bufsize=1,
-            universal_newlines=False
-        )
-        
-        # Create queues and threads for monitoring output
-        output_queue = queue.Queue()
-        
-        stdout_thread = threading.Thread(
-            target=monitor_output, 
-            args=(process, output_queue, 'stdout')
-        )
-        stderr_thread = threading.Thread(
-            target=monitor_output, 
-            args=(process, output_queue, 'stderr')
-        )
-        
-        stdout_thread.daemon = True
-        stderr_thread.daemon = True
-        stdout_thread.start()
-        stderr_thread.start()
-        
-        # Wait for process to complete while monitoring output
-        auth_detected = False
-        while process.poll() is None:
-            try:
-                stream_name, line, is_auth = output_queue.get(timeout=0.1)
-                if is_auth:
-                    auth_detected = True
-                # Log all output normally
-                logger.info(f"Snakemake {stream_name}: {line}")
-            except queue.Empty:
-                continue
-        
-        # Get any remaining output
-        while not output_queue.empty():
-            try:
-                stream_name, line, is_auth = output_queue.get_nowait()
-                if is_auth:
-                    auth_detected = True
-                logger.info(f"Snakemake {stream_name}: {line}")
-            except queue.Empty:
-                break
-        
-        # Check return code
-        return_code = process.wait()
-        
-        if auth_detected:
-            print("\n" + "="*60)
-            print("🚨 AUTHENTICATION WAS REQUIRED DURING EXECUTION 🚨")
-            print("Please check the authentication prompts above and")
-            print("complete the authentication process in your browser.")
-            print("")
-            print("After completing authentication, you have two options:")
-            print("1. Run 'ddmisid-engine auth' to update your stored credentials")
-            print("2. Or simply re-run your original command")
-            print("")
-            print("The authentication URL and code should be visible above.")
-            print("="*60 + "\n")
-        
-        if return_code != 0:
-            raise subprocess.CalledProcessError(return_code, cmd)
-            
+        subprocess.run(cmd, check=True, env=env)
     except subprocess.CalledProcessError as e:
         # Check if this is a lock error
         if e.returncode == 1:
