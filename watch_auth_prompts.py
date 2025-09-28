@@ -70,7 +70,10 @@ class AuthPromptWatcher(FileSystemEventHandler):
         indicators = [
             'control', 'target', 'kaon', 'pion', 'proton', 'electron', 'muon', 'ghost',
             'up', 'down', '2015', '2016', '2017', '2018', 'pideffx', 'workflow',
-            'logs', 'engine', 'snakemake', '.snakemake'
+            'logs', 'engine', 'snakemake', '.snakemake',
+            # Add particle transition patterns
+            '_to_', '_like', 'proton_to_electron', 'electron_to_pion', 
+            'kaon_to_', 'pion_to_', 'muon_to_', 'ghost_to_'
         ]
         return any(indicator in path_str for indicator in indicators)
     
@@ -86,7 +89,9 @@ class AuthPromptWatcher(FileSystemEventHandler):
         """Check if a file is a log file we should monitor."""
         return (filepath.suffix in ['.log', '.txt'] or 
                 'log' in filepath.name.lower() or
-                filepath.name in ['pideffx.log', 'ddmisid_log', 'snakemake.log'])
+                filepath.name in ['pideffx.log', 'process_pideffx.log', 'ddmisid_log', 'snakemake.log'] or
+                filepath.name.startswith('pideffx') or
+                filepath.name.endswith('pideffx.log'))
     
     def check_file(self, filepath):
         """Check a file for new authentication prompts."""
@@ -233,6 +238,31 @@ class AuthPromptWatcher(FileSystemEventHandler):
         print(f"⏳ Process will continue after you authenticate in browser...")
         print(f"{'='*80}\n")
     
+    def scan_for_existing_pideffx_logs(self, base_dirs):
+        """Scan existing directories for pideffx.log files and start monitoring them."""
+        pideffx_files_found = []
+        
+        for base_dir in base_dirs:
+            if not base_dir.exists():
+                continue
+                
+            # Look for pideffx.log files recursively
+            pideffx_files = list(base_dir.rglob('pideffx.log')) + list(base_dir.rglob('*pideffx.log'))
+            
+            for pideffx_file in pideffx_files:
+                pideffx_files_found.append(pideffx_file)
+                # Initialize file position to current end (don't show historical content)
+                self.file_positions[str(pideffx_file)] = pideffx_file.stat().st_size if pideffx_file.exists() else 0
+                
+                # Also monitor the parent directory if not already monitored
+                parent_dir = pideffx_file.parent
+                parent_str = str(parent_dir)
+                if parent_str not in self.monitored_dirs:
+                    self.monitored_dirs.add(parent_str)
+                    self.observer.schedule(self, parent_str, recursive=False)
+        
+        return pideffx_files_found
+    
     def extract_context_from_path(self, path_parts):
         """Extract meaningful context from file path for DDmisID workflow."""
         context = []
@@ -255,11 +285,20 @@ class AuthPromptWatcher(FileSystemEventHandler):
         if region:
             context.append(f"{region.title()} region")
         
-        # Look for particle species
+        # Look for particle species (original particle)
         species = ['kaon', 'pion', 'proton', 'electron', 'muon', 'ghost']
         particle = next((part for part in path_parts if part in species), None)
         if particle:
             context.append(f"{particle.title()} species")
+        
+        # Look for particle transition patterns (e.g., proton_to_electron_like)
+        transition_patterns = ['_to_', '_like']
+        for part in path_parts:
+            if any(pattern in part for pattern in transition_patterns):
+                # Clean up the transition name for display
+                transition = part.replace('_', ' ').replace(' like', '-like').title()
+                context.append(f"PID: {transition}")
+                break
         
         # Look for DDmisID workflow stages
         stages = ['pideffx', 'discretize', 'collect', 'engine']
@@ -314,13 +353,27 @@ def main():
     observer.schedule(event_handler, ".", recursive=True)
     print(f"   📂 {Path('.').absolute()} (current directory - always monitored)")
     
+    # Scan for existing pideffx.log files
+    print("\n🔍 Scanning for existing pideffx.log files...")
+    pideffx_files = event_handler.scan_for_existing_pideffx_logs(existing_dirs + [Path(".")])
+    if pideffx_files:
+        print(f"   📄 Found {len(pideffx_files)} existing pideffx.log files:")
+        for pf in pideffx_files[:5]:  # Show first 5
+            print(f"      - {pf}")
+        if len(pideffx_files) > 5:
+            print(f"      - ... and {len(pideffx_files) - 5} more")
+    else:
+        print("   📋 No existing pideffx.log files found (will monitor as they're created)")
+    
     print()
     print("🎯 Monitoring patterns:")
     print("   - CERN OIDC device flow authentication")
     print("   - Kerberos authentication prompts") 
     print("   - logs/engine/ddmisid_log_*.log (engine logs)")
-    print("   - logs/workflow/**/*.log (workflow stage logs)")
+    print("   - logs/workflow/**/pideffx.log (PID efficiency extraction logs)")
+    print("   - logs/workflow/**/process_pideffx.log (processed PID logs)")
     print("   - .snakemake/log/*.log (Snakemake internal logs)")
+    print("   - Nested workflow directories (YEAR/POLARITY/REGION/SPECIES/*/pideffx.log)")
     print("   - Any .log or .txt files in workflow directories")
     print("   - Dynamically created subdirectories")
     print()

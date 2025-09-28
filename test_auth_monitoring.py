@@ -72,33 +72,40 @@ def test_workflow_directory_monitoring():
     
     print("🧪 Testing workflow directory monitoring...")
     
-    # Create workflow-like directory structure
+    # Create workflow-like directory structure matching your examples
     test_dirs = [
-        "logs/workflow/2018/up/control/kaon/test",
-        "logs/workflow/2018/down/target/pion/test"
+        "logs/workflow/2018/up/control/proton/proton_to_electron_like",
+        "logs/workflow/2018/up/control/electron/electron_to_pion_like",
+        "logs/workflow/2018/down/target/kaon/kaon_to_muon_like",
     ]
+    
+    created_files = []
     
     for test_dir in test_dirs:
         dir_path = Path(test_dir)
         dir_path.mkdir(parents=True, exist_ok=True)
         
-        # Create a pideffx.log file
-        log_file = dir_path / "pideffx.log"
-        print(f"📁 Creating test workflow log: {log_file}")
-        
-        with open(log_file, "w") as f:
-            f.write("2025-09-28 15:35:00 | INFO | Starting PID efficiency extraction\n")
-            f.write("2025-09-28 15:35:01 | INFO | Connecting to CERN services\n")
-        
-        time.sleep(1)
-        
-        # Add auth prompt
-        with open(log_file, "a") as f:
-            f.write("2025-09-28 15:35:05 | WARNING | CERN_OIDC_TOKEN not found in environment\n") 
-            f.write("2025-09-28 15:35:06 | INFO | Please authenticate: https://auth.cern.ch/auth/realms/cern/device?user_code=TEST-9999\n")
+        # Create both pideffx.log and process_pideffx.log files
+        for log_name in ["pideffx.log", "process_pideffx.log"]:
+            log_file = dir_path / log_name
+            print(f"📁 Creating test workflow log: {log_file}")
+            created_files.append(log_file)
+            
+            with open(log_file, "w") as f:
+                f.write(f"2025-09-28 15:35:00 | INFO | Starting {log_name.replace('.log', '')}\n")
+                f.write(f"2025-09-28 15:35:01 | INFO | Processing {test_dir.split('/')[-1]} efficiency\n")
+                f.write("2025-09-28 15:35:02 | INFO | Connecting to CERN services\n")
+            
+            time.sleep(1)
+            
+            # Add auth prompt
+            with open(log_file, "a") as f:
+                f.write("2025-09-28 15:35:05 | WARNING | CERN_OIDC_TOKEN not found in environment\n") 
+                f.write("2025-09-28 15:35:06 | INFO | Starting CERN OIDC device login (watch this terminal for the device code)...\n")
+                f.write(f"2025-09-28 15:35:07 | INFO | Please go to https://auth.cern.ch/auth/realms/cern/device?user_code=TEST-{hash(test_dir + log_name) % 10000:04d}\n")
     
     print("✅ Workflow directory test completed!")
-    return test_dirs
+    return created_files
 
 
 if __name__ == "__main__":
@@ -125,12 +132,15 @@ if __name__ == "__main__":
     test_log = create_test_log_with_auth_prompt()
     
     print("\n" + "="*50)
-    test_dirs = test_workflow_directory_monitoring()
+    test_files = test_workflow_directory_monitoring()
     
     print("\n" + "="*50)
     print("🧪 All tests completed!")
     print()
     print("🧹 Cleanup (optional):")
     print(f"   rm {test_log}")
-    for test_dir in test_dirs:
-        print(f"   rm -rf {Path(test_dir).parent.parent.parent}")  # Remove logs/workflow/2018
+    for test_file in test_files[:3]:  # Show first few files
+        print(f"   rm {test_file}")
+    if len(test_files) > 3:
+        print(f"   # ... and {len(test_files) - 3} more files")
+    print("   rm -rf logs/workflow/2018  # Remove entire test workflow structure")
