@@ -134,48 +134,5 @@ def run(snakemake_args):
         logger.info("Success: DDmisID engine run complete.")
 
 
-@cli.command()
-def test_auth_monitor():
-    """Test the authentication prompt monitoring system."""
-    logger.info("Testing authentication prompt monitoring system...")
-    
-    try:
-        from .auth_monitor import AuthPromptDetector
-        from pathlib import Path
-        import tempfile
-        import time
-        
-        # Test pattern detection
-        detector = AuthPromptDetector()
-        test_content = """
-        Starting process...
-        CERN SINGLE SIGN-ON
-        On your tablet, phone or computer, go to:
-        https://auth.cern.ch/auth/realms/cern/device
-        and enter the following code:
-        TEST-1234
-        You may also open the following link directly:
-        https://auth.cern.ch/auth/realms/cern/device?user_code=TEST-1234
-        """
-        
-        detection = detector.detect_auth_prompt(test_content)
-        if detection:
-            logger.success("✅ Pattern detection working correctly")
-            logger.info(f"Detected device code: {detection['device_code']}")
-            logger.info(f"Auth URL: {detection['auth_url']}")
-        else:
-            logger.error("❌ Pattern detection failed")
-            return
-        
-        logger.success("✅ Authentication prompt monitoring test completed successfully")
-        logger.info("💡 The system will now display authentication prompts from log files in your terminal")
-        
-    except ImportError as e:
-        logger.error(f"❌ Authentication monitoring not available: {e}")
-        logger.info("Install dependencies with: pip install watchdog")
-    except Exception as e:
-        logger.error(f"❌ Test failed: {e}")
-
-
 if __name__ == "__main__":
     cli()
